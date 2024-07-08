@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <style>
+      body {
+          font-family: Arial, sans-serif;
+          background-color: #f8f9fa;
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          align-items: center;
+          height: 100vh;
+          margin: 0;
+      }
+
+      form, .content {
+          background-color: #fff;
+          padding: 20px;
+          border-radius: 8px;
+          box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+          width: 300px;
+          margin-bottom: 30px;
+      }
+
+      .content {
+          width: 80%;
+          overflow: scroll;
+          max-height: 500px;
+          padding: 50px;
+        display: none;
+      }
+
+      .form-group {
+          position: relative;
+          margin-bottom: 20px;
+      }
+
+      .form-group input {
+          width: 100%;
+          padding: 10px;
+          font-size: 16px;
+          border: 1px solid #ccc;
+          border-radius: 4px;
+          outline: none;
+          transition: border-color 0.3s ease;
+          box-sizing: border-box;
+      }
+
+      .form-group input:focus {
+          border-color: #007bff;
+      }
+
+      .form-group label {
+          position: absolute;
+          top: 12px;
+          left: 12px;
+          background-color: #fff;
+          padding: 0 4px;
+          color: #777;
+          font-size: 14px;
+          transition: top 0.3s ease, font-size 0.3s ease;
+      }
+
+      .form-group input:focus + label,
+      .form-group input:not(:placeholder-shown) + label {
+          top: -10px;
+          font-size: 12px;
+          color: #007bff;
+      }
+
+      button {
+          width: 100%;
+          padding: 10px;
+          background-color: #007bff;
+          color: #fff;
+          font-size: 16px;
+          border: none;
+          border-radius: 4px;
+          cursor: pointer;
+          transition: background-color 0.3s ease;
+      }
+
+      button:hover {
+          background-color: #0056b3;
+      }
+
+  </style>
+</head>
+<body>
+
+<form>
+  <div class="form-group">
+    <input id="fromBlock" name="fromBlock" type="text" value="19000000">
+    <label for="fromBlock">From Block</label>
+  </div>
+  <div class="form-group">
+    <input id="toBlock" name="toBlock" type="text" value="19000002">
+    <label for="toBlock">To Block</label>
+  </div>
+  <button type="button" id="submit">Submit</button>
+</form>
+
+<div class="content"></div>
+</body>
+
+<script>
+    const fromBlock = document.getElementById('fromBlock');
+    const toBlock = document.getElementById('toBlock');
+    const content = document.querySelector('.content');
+
+    const HOST = 'http://localhost:3001';
+
+    window.addEventListener('DOMContentLoaded', async () => {
+      const mapping = await loadMapping();
+
+      document.getElementById('submit').addEventListener('click', (e) => {
+        e.preventDefault();
+
+        const fromBlockValue = +fromBlock.value;
+        const toBlockValue = +toBlock.value;
+
+        for (let i = fromBlockValue; i <= toBlockValue; i++) {
+          fetch(`${HOST}/block/${i}/${mapping.get(i.toString())}`)
+            .then(response => response.json())
+            .then(data => {
+              if(!content.style.display) {
+                  content.style.display = 'block';
+              }
+              const div = document.createElement('div');
+              div.innerHTML = `<h3>Block ${i}</h3><pre>${JSON.stringify(data, null, 2)}</pre>`;
+              content.appendChild(div);
+            });
+        }
+      });
+    });
+
+    async function loadMapping() {
+      const map = new Map();
+        await fetch('https://block-storage-data.s3.eu-west-1.amazonaws.com/mapping.json')
+            .then(response => response.json()).then((data) => {
+            Object.entries(data).forEach(([number, hash]) => {
+                map.set(number, hash);
+            })
+        })
+      return map;
+    }
+</script>
+</html>
