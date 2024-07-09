@@ -40,68 +40,85 @@ function readFileHeader(buffer) {
 
     // Read each block position
     for (let i = 0; i < numberOfBlocks; i++) {
-    const blockOffset = i * blockPositionLength;
+        const blockOffset = i * blockPositionLength;
 
-    // Read the block number, hash, start and end positions
-    const blockNumber = Number(blockPositionsBuffer.readBigUInt64LE(blockOffset));
-    const blockHash = blockPositionsBuffer
-        .subarray(
-        blockOffset + HEADER_DATA_SIZE.BLOCK_NUMBER_LENGTH,
-        blockOffset + HEADER_DATA_SIZE.BLOCK_NUMBER_LENGTH + blockHashLength,
-        )
-        .toString();
-    const blockStartOffset = Number(
-        blockPositionsBuffer.readBigUInt64LE(
-        blockOffset + HEADER_DATA_SIZE.BLOCK_NUMBER_LENGTH + blockHashLength,
-        ),
-    );
-    const blockEndOffset = Number(
-        blockPositionsBuffer.readBigUInt64LE(
-        blockOffset +
-            HEADER_DATA_SIZE.BLOCK_NUMBER_LENGTH +
-            blockHashLength +
-            HEADER_DATA_SIZE.BLOCK_START_POSITION_LENGTH,
-        ),
-    );
+        // Read the block number, hash, start and end positions
+        const blockNumber = Number(blockPositionsBuffer.readBigUInt64LE(blockOffset));
+        const blockHash = blockPositionsBuffer
+            .subarray(
+                blockOffset + HEADER_DATA_SIZE.BLOCK_NUMBER_LENGTH,
+                blockOffset + HEADER_DATA_SIZE.BLOCK_NUMBER_LENGTH + blockHashLength,
+            )
+            .toString();
+        const blockStartOffset = Number(
+                blockPositionsBuffer.readBigUInt64LE(
+                blockOffset + HEADER_DATA_SIZE.BLOCK_NUMBER_LENGTH + blockHashLength,
+            ),
+        );
+        const blockEndOffset = Number(
+            blockPositionsBuffer.readBigUInt64LE(
+            blockOffset +
+                HEADER_DATA_SIZE.BLOCK_NUMBER_LENGTH +
+                blockHashLength +
+                HEADER_DATA_SIZE.BLOCK_START_POSITION_LENGTH,
+            ),
+        );
 
-    // Store the block position in the map
-    blockPositions.set(`${blockNumber}-${blockHash}`, { start: blockStartOffset, end: blockEndOffset });
+        // Store the block position in the map
+        blockPositions.set(`${blockNumber}-${blockHash}`, { start: blockStartOffset, end: blockEndOffset });
     }
 
     return blockPositions;
-}
-
-function getBlockPartBuffer(buffer, blockName) {
-    const blocksMap = readFileHeader(buffer);
-    const { start, end } = blocksMap.get(blockName);
-    return buffer.subarray(start, end + 1);
 }
 
 function pathToBlocksFiles() {
     return path.join(__dirname, '../../..', 'files/blocks');
 }
 
-async function readFromFile(name) {
+async function readFile(name) {
     const filePath = `${pathToBlocksFiles()}/${name}`;
     const fileDataBuffer = fs.promises.readFile(filePath);
     return fileDataBuffer;
 }
 
-async function saveFile(name, buffer) {
+async function readFileStream(name, startBytes, endBytes) {
     const filePath = `${pathToBlocksFiles()}/${name}`;
+    const fileReadStream = fs.createReadStream(filePath, {
+        start: startBytes,
+        end: endBytes,
+    });
 
+    fileReadStream.once('error', (err) => {
+        fileReadStream.destroy();
+    });
+
+    return fileReadStream;
+}
+
+async function checkFileExist(fileName) {
+    const pathToFile = `${pathToBlocksFiles()}/${fileName}`;
+    
     try {
-        await fs.promises.writeFile(filePath, buffer);
+        await fs.promises.access(pathToFile, fs.constants.F_OK);
+        return true;
     } catch (err) {
+        if (err.code === 'ENOENT') {
+            return false;
+        }
         console.error(err);
-        throw Error('Failed to save file');
+        throw err;
     }
 }
 
+function getCompactedFileName(blockRange) {
+    return `compacted-${blockRange}.json.gz`;
+}
+
 module.exports = {
-    readFileHeader,
-    getBlockPartBuffer,
     pathToBlocksFiles,
-    readFromFile,
-    saveFile
+    readFileStream,
+    readFileHeader,
+    getCompactedFileName,
+    readFile,
+    checkFileExist,
 }

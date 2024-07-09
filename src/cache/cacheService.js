@@ -23,6 +23,10 @@ class CacheService {
     has(key) {
         return this.#cache.has(key);
     }
+
+    delete(key) {
+        return this.#cache.delete(key);
+    }
 }
 
 module.exports = new CacheService();

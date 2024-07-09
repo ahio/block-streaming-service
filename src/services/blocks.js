@@ -1,8 +1,14 @@
-const { Readable } = require("node:stream");
 const { pipeline } = require('node:stream/promises');
 const { GetObjectCommand } = require("@aws-sdk/client-s3");
 const { createWriteStream } = require("node:fs");
-const { getBlockPartBuffer, readFromFile, saveFile, pathToBlocksFiles } = require("./utils/file");
+const { 
+    pathToBlocksFiles,
+    readFileStream, 
+    readFileHeader, 
+    getCompactedFileName, 
+    readFile, 
+    checkFileExist
+} = require("./utils/file");
 const { getBlockRange } = require("./utils/utils");
 
 class BlockFactory {
@@ -11,7 +17,7 @@ class BlockFactory {
         this.s3Client = s3Client;
     }
 
-    #downloadFileFromS3ToLocal(name) {
+    #downloadFileToLocalStorage(name) {
         return new Promise(async (resolve, reject) => {
             const getObjectRequest = {
                 Bucket: process.env.AWS_BUCKET,
@@ -31,43 +37,64 @@ class BlockFactory {
         });
     }
 
-    async #getBlockPartFromLocalFile(fileName, blockPartName) {
+    #downloadAndParseFile(blockRange) {
+        return new Promise(async (resolve, reject) => {
+            const fileName = getCompactedFileName(blockRange);
+            try {
+                await this.#downloadFileToLocalStorage(fileName);
+                const fileBuffer = await readFile(fileName);
+                const blockMapping = readFileHeader(fileBuffer);
+                this.cacheService.save(`${blockRange}-mapping`, blockMapping);
+                resolve();
+            } catch (err) {
+                reject(err);
+            }
+        });
+    }
+
+    async #getBlockPartFromLocalFile(blockRange, blockKey) {
         try {
-            const fileBuffer = await readFromFile(fileName);
-            const blockBuffer = getBlockPartBuffer(fileBuffer, blockPartName);
-            return Readable.from(blockBuffer);
+            const fileName = getCompactedFileName(blockRange);
+            const blockKeys = this.cacheService.retrieve(`${blockRange}-mapping`);
+            const blockPosition = blockKeys.get(blockKey);
+            return await readFileStream(fileName, blockPosition.start, blockPosition.end);
         } catch (err) {
-            console.error(err);
-            throw Error('Failed to get block part from file');
+            console.error('Failed to get block part from file');
+            throw err;
         }
     }
 
     async getBlockData({ blockNumber, blockHash }) {
-        const blockRange = getBlockRange(blockNumber, 100);
-        const fileName = `compacted-${blockRange.minBlockNumber}-${blockRange.maxBlockNumber}.json.gz`;
+        const range = getBlockRange(blockNumber, 100);
+        const blockRange = `${range.minBlockNumber}-${range.maxBlockNumber}`;
 
-        if (this.cacheService.has(fileName)) {
-            const blocksFile = this.cacheService.retrieve(fileName);
+        // new request to the same file, but file still downloading
+        if (this.cacheService.has(`${blockRange}-promise`)) {
+            const fileDownloadPromise = this.cacheService.retrieve(`${blockRange}-promise`);
+            await fileDownloadPromise;
 
-            if (!!blocksFile.localFilePromise) {
-                await blocksFile.localFilePromise;
+            return this.#getBlockPartFromLocalFile(blockRange, `${blockNumber}-${blockHash}`);
+        }
+
+
+        if (this.cacheService.has(`${blockRange}-mapping`)) {
+            const fileExist = await checkFileExist(getCompactedFileName(blockRange));
+            if (fileExist) {
+                return this.#getBlockPartFromLocalFile(blockRange, `${blockNumber}-${blockHash}`)
             }
-
-            return this.#getBlockPartFromLocalFile(fileName, `${blockNumber}-${blockHash}`);
         }
 
         try {
-            const localFilePromise = this.#downloadFileFromS3ToLocal(fileName);
-            this.cacheService.save(fileName, { date: new Date(), localFilePromise });
-
-            await localFilePromise;
-            this.cacheService.save(fileName, { date: new Date(), localFilePromise: null });
-
-            return this.#getBlockPartFromLocalFile(fileName, `${blockNumber}-${blockHash}`);
+            const fileDownloadPromise = this.#downloadAndParseFile(blockRange);
+            this.cacheService.save(`${blockRange}-promise`, fileDownloadPromise );
+            await fileDownloadPromise;
+            this.cacheService.delete(`${blockRange}-promise`);
         } catch (err) {
             console.error(err);
-            throw Error(err);
+            throw Error('Failed to download file');
         }
+
+        return this.#getBlockPartFromLocalFile(blockRange, `${blockNumber}-${blockHash}`);
     }
 }
 
