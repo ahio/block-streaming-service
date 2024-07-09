@@ -11,7 +11,7 @@ const {
 } = require("./utils/file");
 const { getBlockRange } = require("./utils/utils");
 
-class BlockFactory {
+class BlockService {
     constructor({ cacheService, s3Client }) {
         this.cacheService = cacheService;
         this.s3Client = s3Client;
@@ -98,4 +98,4 @@ class BlockFactory {
     }
 }
 
-module.exports = BlockFactory;
+module.exports = BlockService;
